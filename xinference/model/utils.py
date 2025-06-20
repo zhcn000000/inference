@@ -18,10 +18,11 @@ import logging
 import os
 import random
 import threading
+from collections.abc import Callable
 from copy import deepcopy
 from json import JSONDecodeError
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
+from typing import Any
 
 import huggingface_hub
 import numpy as np
@@ -85,10 +86,7 @@ def symlink_local_file(path: str, local_dir: str, relpath: str) -> str:
             )
     # Using `os.path.abspath` instead of `Path.resolve()` to avoid resolving symlinks
     local_dir_filepath = os.path.join(local_dir, relative_filename)
-    if (
-        Path(os.path.abspath(local_dir))
-        not in Path(os.path.abspath(local_dir_filepath)).parents
-    ):
+    if Path(os.path.abspath(local_dir)) not in Path(os.path.abspath(local_dir_filepath)).parents:
         raise ValueError(
             f"Cannot copy file '{relative_filename}' to local dir '{local_dir}': file would not be in the local"
             " directory."
@@ -110,7 +108,7 @@ def create_symlink(download_dir: str, cache_dir: str):
 def retry_download(
     download_func: Callable,
     model_name: str,
-    model_info: Optional[Dict],
+    model_info: dict | None,
     *args,
     **kwargs,
 ):
@@ -128,37 +126,28 @@ def retry_download(
                 args,
                 kwargs,
             )
-            logger.warning(
-                f"Attempt {current_attempt} failed. Remaining attempts: {remaining_attempts}"
-            )
+            logger.warning(f"Attempt {current_attempt} failed. Remaining attempts: {remaining_attempts}")
 
-    else:
-        model_size = (
-            model_info.pop("model_size", None) if model_info is not None else None
-        )
-        model_format = (
-            model_info.pop("model_format", None) if model_info is not None else None
-        )
-        if model_size is not None or model_format is not None:  # LLM models
-            raise RuntimeError(
-                f"Failed to download model '{model_name}' "
-                f"(size: {model_size}, format: {model_format}) "
-                f"after multiple retries"
-            ) from last_ex
-        else:  # Embedding models
-            raise RuntimeError(
-                f"Failed to download model '{model_name}' after multiple retries"
-            ) from last_ex
+    model_size = model_info.pop("model_size", None) if model_info is not None else None
+    model_format = model_info.pop("model_format", None) if model_info is not None else None
+    if model_size is not None or model_format is not None:  # LLM models
+        raise RuntimeError(
+            f"Failed to download model '{model_name}' "
+            f"(size: {model_size}, format: {model_format}) "
+            f"after multiple retries"
+        ) from last_ex
+    else:  # Embedding models
+        raise RuntimeError(f"Failed to download model '{model_name}' after multiple retries") from last_ex
 
 
 def valid_model_revision(
     meta_path: str,
-    expected_model_revision: Optional[str],
-    expected_model_hub: Optional[str] = None,
+    expected_model_revision: str | None,
+    expected_model_hub: str | None = None,
 ) -> bool:
     if not os.path.exists(meta_path):
         return False
-    with open(meta_path, "r") as f:
+    with open(meta_path) as f:
         try:
             meta_data = json.load(f)
         except JSONDecodeError:  # legacy meta file for embedding models
@@ -170,13 +159,9 @@ def valid_model_revision(
         elif "revision" in meta_data:  # llm
             real_revision = meta_data["revision"]
         else:
-            logger.warning(
-                f"No `revision` information in the `__valid_download` file. "
-            )
+            logger.warning("No `revision` information in the `__valid_download` file. ")
             return False
-        if expected_model_hub is not None and expected_model_hub != meta_data.get(
-            "model_hub", "huggingface"
-        ):
+        if expected_model_hub is not None and expected_model_hub != meta_data.get("model_hub", "huggingface"):
             logger.info("Use model cache from a different hub.")
             return True
         else:
@@ -187,7 +172,7 @@ def get_cache_dir(model_spec: Any) -> str:
     return os.path.realpath(os.path.join(XINFERENCE_CACHE_DIR, model_spec.model_name))
 
 
-def is_model_cached(model_spec: Any, name_to_revisions_mapping: Dict):
+def is_model_cached(model_spec: Any, name_to_revisions_mapping: dict):
     cache_dir = get_cache_dir(model_spec)
     meta_path = os.path.join(cache_dir, "__valid_download")
     revisions = name_to_revisions_mapping[model_spec.model_name]
@@ -206,7 +191,7 @@ def is_valid_model_name(model_name: str) -> bool:
     return re.match(r"^[^+\/?%#&=\s]*$", model_name) is not None
 
 
-def parse_uri(uri: str) -> Tuple[str, str]:
+def parse_uri(uri: str) -> tuple[str, str]:
     import glob
     from urllib.parse import urlparse
 
@@ -221,7 +206,7 @@ def parse_uri(uri: str) -> Tuple[str, str]:
         return scheme, path
 
 
-def is_valid_model_uri(model_uri: Optional[str]) -> bool:
+def is_valid_model_uri(model_uri: str | None) -> bool:
     if not model_uri:
         return False
 
@@ -237,24 +222,18 @@ def is_valid_model_uri(model_uri: Optional[str]) -> bool:
 
 
 def cache_from_uri(model_spec: CacheableModelSpec) -> str:
-    cache_dir = os.path.realpath(
-        os.path.join(XINFERENCE_CACHE_DIR, model_spec.model_name)
-    )
+    cache_dir = os.path.realpath(os.path.join(XINFERENCE_CACHE_DIR, model_spec.model_name))
     if os.path.exists(cache_dir):
         logger.info("cache %s exists", cache_dir)
         return cache_dir
 
     assert model_spec.model_uri is not None
     src_scheme, src_root = parse_uri(model_spec.model_uri)
-    if src_root.endswith("/"):
-        # remove trailing path separator.
-        src_root = src_root[:-1]
+    src_root = src_root.removesuffix("/")
 
     if src_scheme == "file":
         if not os.path.isabs(src_root):
-            raise ValueError(
-                f"Model URI cannot be a relative path: {model_spec.model_uri}"
-            )
+            raise ValueError(f"Model URI cannot be a relative path: {model_spec.model_uri}")
         os.makedirs(XINFERENCE_CACHE_DIR, exist_ok=True)
         os.symlink(src_root, cache_dir, target_is_directory=True)
         return cache_dir
@@ -263,16 +242,11 @@ def cache_from_uri(model_spec: CacheableModelSpec) -> str:
 
 
 def cache(model_spec: CacheableModelSpec, model_description_type: type):
-    if (
-        hasattr(model_spec, "model_uri")
-        and getattr(model_spec, "model_uri", None) is not None
-    ):
+    if hasattr(model_spec, "model_uri") and getattr(model_spec, "model_uri", None) is not None:
         logger.info(f"Model caching from URI: {model_spec.model_uri}")
         return cache_from_uri(model_spec=model_spec)
 
-    cache_dir = os.path.realpath(
-        os.path.join(XINFERENCE_CACHE_DIR, model_spec.model_name)
-    )
+    cache_dir = os.path.realpath(os.path.join(XINFERENCE_CACHE_DIR, model_spec.model_name))
     if not os.path.exists(cache_dir):
         os.makedirs(cache_dir, exist_ok=True)
     meta_path = os.path.join(cache_dir, "__valid_download")
@@ -319,21 +293,18 @@ def select_device(device):
     try:
         import torch  # noqa: F401
     except ImportError:
-        raise ImportError(
-            f"Failed to import module 'torch'. Please make sure 'torch' is installed.\n\n"
-        )
+        raise ImportError("Failed to import module 'torch'. Please make sure 'torch' is installed.\n\n")
 
     if device == "auto":
         return get_available_device()
-    else:
-        if not is_device_available(device):
-            raise ValueError(f"{device} is unavailable in your environment")
+    elif not is_device_available(device):
+        raise ValueError(f"{device} is unavailable in your environment")
 
     return device
 
 
-def convert_float_to_int_or_str(model_size: float) -> Union[int, str]:
-    """convert float to int or string
+def convert_float_to_int_or_str(model_size: float) -> int | str:
+    """Convert float to int or string
 
     if float can be presented as int, convert it to int, otherwise convert it to string
     """
@@ -353,8 +324,8 @@ def set_all_random_seed(seed: int):
 class CancellableDownloader:
     def __init__(
         self,
-        cancel_error_cls: Type[BaseException] = asyncio.CancelledError,
-        cancelled_event: Optional[threading.Event] = None,
+        cancel_error_cls: type[BaseException] = asyncio.CancelledError,
+        cancelled_event: threading.Event | None = None,
     ):
         self._cancelled = cancelled_event
         if self._cancelled is None:
@@ -363,10 +334,10 @@ class CancellableDownloader:
         self._cancel_error_cls = cancel_error_cls
         self._original_update = None
         # progress for tqdm that is main
-        self._main_progresses: Set[tqdm] = set()
+        self._main_progresses: set[tqdm] = set()
         # progress for file downloader
         # mainly when tqdm unit is set
-        self._download_progresses: Set[tqdm] = set()
+        self._download_progresses: set[tqdm] = set()
         # tqdm original update
         self._original_tqdm_update = None
 
@@ -395,17 +366,11 @@ class CancellableDownloader:
             # we skip finished download
             if download_progress.n == download_progress.total:
                 continue
-            all_download_progress += download_progress.total or (
-                download_progress.n * 10
-            )
+            all_download_progress += download_progress.total or (download_progress.n * 10)
             finished_download_progress += download_progress.n
 
         if all_download_progress > 0:
-            rest_ratio = (
-                (tasks - finished_tasks)
-                / tasks
-                * (finished_download_progress / all_download_progress)
-            )
+            rest_ratio = (tasks - finished_tasks) / tasks * (finished_download_progress / all_download_progress)
             return finished_ratio + rest_ratio
         else:
             return finished_ratio
@@ -463,9 +428,7 @@ class CancellableDownloader:
         self.reset()
 
 
-def get_engine_params_by_name(
-    model_type: Optional[str], model_name: str
-) -> Optional[Dict[str, List[dict]]]:
+def get_engine_params_by_name(model_type: str | None, model_name: str) -> dict[str, list[dict]] | None:
     if model_type == "LLM":
         from .llm.llm_family import LLM_ENGINES
 
@@ -492,8 +455,19 @@ def get_engine_params_by_name(
                 del param["embedding_class"]
 
         return engine_params
+
+    elif model_type == "rerank":
+        from .rerank.rerank_family import RERANK_ENGINES
+
+        if model_name not in RERANK_ENGINES:
+            return None
+
+        # filter embedding_class
+        engine_params = deepcopy(RERANK_ENGINES[model_name])
+        for engine, params in engine_params.items():
+            for param in params:
+                del param["rerank_class"]
+
+        return engine_params
     else:
-        raise ValueError(
-            f"Cannot support model_engine for {model_type}, "
-            f"only available for LLM, embedding"
-        )
+        raise ValueError(f"Cannot support model_engine for {model_type}, only available for LLM, embedding,rerank")

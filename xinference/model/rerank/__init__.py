@@ -16,7 +16,7 @@ import codecs
 import json
 import os
 import warnings
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from ...constants import XINFERENCE_MODEL_DIR
 from .core import (
@@ -33,9 +33,18 @@ from .custom import (
     register_rerank,
     unregister_rerank,
 )
+from .rerank_family import (
+    BUILTIN_RERANK_MODELS,
+    FLAG_RERANKER_CLASSES,
+    MODELSCOPE_RERANK_MODELS,
+    RERANK_ENGINES,
+    SENTENCE_TRANSFORMER_CLASSES,
+    SUPPORTED_ENGINES,
+    VLLM_CLASSES,
+)
 
-BUILTIN_RERANK_MODELS: Dict[str, Any] = {}
-MODELSCOPE_RERANK_MODELS: Dict[str, Any] = {}
+BUILTIN_RERANK_MODELS: dict[str, Any] = {}
+MODELSCOPE_RERANK_MODELS: dict[str, Any] = {}
 
 
 def register_custom_model():
@@ -44,15 +53,30 @@ def register_custom_model():
     if os.path.isdir(user_defined_rerank_dir):
         for f in os.listdir(user_defined_rerank_dir):
             try:
-                with codecs.open(
-                    os.path.join(user_defined_rerank_dir, f), encoding="utf-8"
-                ) as fd:
-                    user_defined_rerank_spec = CustomRerankModelSpec.parse_obj(
-                        json.load(fd)
-                    )
+                with codecs.open(os.path.join(user_defined_rerank_dir, f), encoding="utf-8") as fd:
+                    user_defined_rerank_spec = CustomRerankModelSpec.parse_obj(json.load(fd))
                     register_rerank(user_defined_rerank_spec, persist=False)
             except Exception as e:
                 warnings.warn(f"{user_defined_rerank_dir}/{f} has error, {e}")
+
+
+def generate_engine_config_by_model_name(model_spec: "RerankModelSpec"):
+    model_name = model_spec.model_name
+    engines: dict[str, list[dict[str, Any]]] = RERANK_ENGINES.get(model_name, {})  # structure for engine query
+    for engine in SUPPORTED_ENGINES:
+        CLASSES = SUPPORTED_ENGINES[engine]
+        for cls in CLASSES:
+            # Every engine needs to implement match method
+            if cls.match(model_spec):
+                # we only match the first class for an engine
+                engines[engine] = [
+                    {
+                        "model_name": model_name,
+                        "embedding_class": cls,
+                    }
+                ]
+                break
+    RERANK_ENGINES[model_name] = engines
 
 
 def _install():
@@ -63,9 +87,7 @@ def _install():
     for model_spec_info in [BUILTIN_RERANK_MODELS, MODELSCOPE_RERANK_MODELS]:
         for model_name, model_spec in model_spec_info.items():
             if model_spec.model_name not in RERANK_MODEL_DESCRIPTIONS:
-                RERANK_MODEL_DESCRIPTIONS.update(
-                    generate_rerank_description(model_spec)
-                )
+                RERANK_MODEL_DESCRIPTIONS.update(generate_rerank_description(model_spec))
 
     register_custom_model()
 
