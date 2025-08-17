@@ -133,7 +133,7 @@ def build_long_description():
 
 
 setup_options = dict(
-    version="1.8.1.post2",
+    version="1.9.0",
     cmdclass=versioneer.get_cmdclass(
         {
             "build_web": BuildWeb,
