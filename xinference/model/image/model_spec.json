@@ -236,10 +236,7 @@
     },
     "virtualenv": {
       "packages": [
-        "git+https://github.com/huggingface/diffusers.git",
-        "peft>=0.17.0",
-        "#system_torch#",
-        "#system_numpy#"
+        "git+https://ghfast.top/https://github.com/huggingface/diffusers.git"
       ],
       "no_build_isolation": true
     }
