@@ -18078,13 +18078,13 @@
             "quantizations": [
               "Int4"
             ],
-            "model_id": "QuantTrio/Qwen3-30B-A3B-Thinking-2507-AWQ"
+            "model_id": "cpatonn/Qwen3-30B-A3B-Thinking-2507-AWQ"
           },
           "modelscope": {
             "quantizations": [
               "Int4"
             ],
-            "model_id": "tclf90/Qwen3-30B-A3B-Thinking-2507-AWQ"
+            "model_id": "cpatonn-mirror/Qwen3-30B-A3B-Thinking-2507-AWQ"
           }
         }
       },
