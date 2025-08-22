@@ -194,9 +194,7 @@ def create_rerank_model_instance(
     model_engine: Optional[str],
     model_format: Optional[str] = None,
     quantization: Optional[str] = None,
-    download_hub: Optional[
-        Literal["huggingface", "modelscope", "openmind_hub", "csghub"]
-    ] = None,
+    download_hub: Optional[Literal["huggingface", "modelscope", "openmind_hub", "csghub"]] = None,
     model_path: Optional[str] = None,
     **kwargs,
 ) -> RerankModel:
@@ -212,9 +210,7 @@ def create_rerank_model_instance(
         # we use sentence_transformers as the default engine for all models
         model_engine = "sentence_transformers"
 
-    rerank_cls = check_engine_by_model_name_and_engine(
-        model_engine, model_name, model_format, quantization
-    )
+    rerank_cls = check_engine_by_model_name_and_engine(model_engine, model_name, model_format, quantization)
     model = rerank_cls(
         model_uid,
         model_path,
